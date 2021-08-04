@@ -4,70 +4,100 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
-	"net/http"
-
-	"github.com/gorilla/websocket"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
 )
 
-// We'll need to define an Upgrader
-// this will require a Read and Write buffer size
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
+var javaToStd chan string
+var stdToJava chan string
 
-func homePage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Home Page")
-}
-
-func wsEndpoint(w http.ResponseWriter, r *http.Request) {
-	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
-
-	// upgrade this connection to a WebSocket
-	// connection
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
+func javaBox() {
+	// start the java process
+	// check if "mc" directory exists
+	// if not, create it
+	if _, err := os.Stat("mc"); os.IsNotExist(err) {
+		os.Mkdir("mc", 0777)
 	}
-	// helpful log statement to show connections
-	log.Println("Client Connected")
-	err = ws.WriteMessage(1, []byte("Hi Client!"))
+	os.Chdir("mc/")
+	cmd := exec.Command("/usr/local/Cellar/openjdk/16.0.1/bin/java", "-Xmx3750M", "-Xms1G", "-jar", "server.jar", "nogui")
+
+	inPipe, err := cmd.StdinPipe()
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
-	// listen indefinitely for new messages coming
-	// through on our WebSocket connection
-	reader(ws)
+	go func() {
+		// watch the stdToJava channel and dump lines to inPipe
+		for line := range stdToJava {
+			fmt.Fprint(inPipe, line)
+		}
+	}()
+
+	outPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cmd.Stderr = os.Stderr
+
+	go func() {
+		err := cmd.Run()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	scanner := bufio.NewScanner(outPipe)
+	for scanner.Scan() {
+		line := scanner.Text()
+		javaToStd <- line
+	}
 }
 
-func setupRoutes() {
-	http.HandleFunc("/", homePage)
-	http.HandleFunc("/ws", wsEndpoint)
+func stdIO() {
+
+	reader := bufio.NewReader(os.Stdin)
+	go func() {
+		// watch stdin and dump lines to the stdToJava channel
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				log.Fatal(err)
+			}
+			stdToJava <- line
+		}
+	}()
+
+	go func() {
+		// watch the javaToStd channel and dump lines to stdout
+		for line := range javaToStd {
+			fmt.Println(line)
+			if strings.Contains(line, "> $") {
+				command := strings.Split(line, "> $")[1]
+				if command == "" {
+					continue
+				}
+				fmt.Println("happy moose")
+				stdToJava <- "say " + command + "\n"
+			}
+		}
+	}()
+	fmt.Println()
 }
 
 func main() {
+
 	fmt.Println("Hello World")
-	setupRoutes()
-	log.Fatal(http.ListenAndServe(":8080", nil))
-}
 
-func reader(conn *websocket.Conn) {
+	javaToStd = make(chan string)
+	stdToJava = make(chan string)
+	go javaBox()
+	go stdIO()
 	for {
-		// read in a message
-		messageType, p, err := conn.ReadMessage()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		// print out that message for clarity
-		fmt.Println(string(p))
-
-		if err := conn.WriteMessage(messageType, p); err != nil {
-			log.Println(err)
-			return
-		}
-
+		time.Sleep(1 * time.Second)
 	}
 }
