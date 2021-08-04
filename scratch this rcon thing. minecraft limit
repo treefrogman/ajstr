@@ -1,0 +1,19 @@
+scratch this rcon thing. minecraft limits the command length through rcon.
+just wrap the java server in a go server with an exec command.
+in the go server create a websocket so the frontend gets all the output.
+that way we can send commands to our frontend from within minecraft.
+let's say we choose our own prefix like #
+then the frontend watches for lines beginning with # and parses them as commands
+
+
+
+https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_client_applications
+https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
+https://www.thepolyglotdeveloper.com/2016/12/create-real-time-chat-app-golang-angular-2-websockets/
+
+https://minecraftservers.fandom.com/wiki/Server_wrappers
+https://github.com/wlwanpan/minecraft-wrapper
+
+https://github.com/garrettjoecox/scriptserver
+
+https://pkg.go.dev/os/exec
