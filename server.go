@@ -17,44 +17,62 @@ var javaToStd chan string
 var stdToJava chan string
 
 func javaBox() {
-	// start the java process
 	// check if "mc" directory exists
-	// if not, create it
 	if _, err := os.Stat("mc"); os.IsNotExist(err) {
+		// if not, create it
 		os.Mkdir("mc", 0777)
 	}
+	// cd mc
 	os.Chdir("mc/")
+
+	// set up the command to start the java process
 	cmd := exec.Command("/usr/local/Cellar/openjdk/16.0.1/bin/java", "-Xmx3750M", "-Xms1G", "-jar", "server.jar", "nogui")
 
+	// attach to the stdin of the java process
 	inPipe, err := cmd.StdinPipe()
 	if err != nil {
 		log.Fatal(err)
 	}
 	go func() {
-		// watch the stdToJava channel and dump lines to inPipe
+		// watch the stdToJava channel and dump lines to inPipe (the stdin of the java process)
 		for line := range stdToJava {
 			fmt.Fprint(inPipe, line)
 		}
 	}()
 
+	// attach to the stdout of the java process
 	outPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	cmd.Stderr = os.Stderr
-
+	outScanner := bufio.NewScanner(outPipe)
 	go func() {
-		err := cmd.Run()
-		if err != nil {
-			log.Fatal(err)
+		// watch outPipe (the stdout of the java process) and dump lines to javaToStd
+		for outScanner.Scan() {
+			line := outScanner.Text()
+			javaToStd <- line
 		}
 	}()
 
-	scanner := bufio.NewScanner(outPipe)
-	for scanner.Scan() {
-		line := scanner.Text()
-		javaToStd <- line
+	// attach to the stderr of the java process
+	errPipe, err := cmd.StderrPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	errScanner := bufio.NewScanner(errPipe)
+	go func() {
+		// watch errPipe (the stderr of the java process) and dump lines to javaToStd
+		for errScanner.Scan() {
+			line := errScanner.Text()
+			javaToStd <- line
+		}
+	}()
+	cmd.Stderr = os.Stderr
+
+	// start the java process
+	err = cmd.Run()
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -91,7 +109,7 @@ func stdIO() {
 
 func main() {
 
-	fmt.Println("Hello World")
+	fmt.Println("Go server started.")
 
 	javaToStd = make(chan string)
 	stdToJava = make(chan string)
