@@ -1,9 +1,6 @@
 // Quick test code to paste in the browser
 
-let url = "http://localhost:8080/ws";
-let protocols = ["stdio"];
-
-let webSocket = new WebSocket(url, protocols);
+let webSocket = new WebSocket("ws://localhost:8080/ws");
 
 webSocket.onmessage = function(event) {
 	console.log(event.data);
